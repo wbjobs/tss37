@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>车联网驾驶员行为画像 v2 - 事件时间水印机制</title>
+    <title>车联网车队管理 v3 - 驾驶员行为画像系统</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -17,596 +17,844 @@
             padding: 16px;
         }
         .header {
-            text-align: center;
-            padding: 12px 0 20px;
-            border-bottom: 1px solid #21303f;
-            margin-bottom: 20px;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 0 16px; border-bottom: 1px solid #21303f; margin-bottom: 16px;
         }
         .header h1 {
-            font-size: 24px;
-            font-weight: 600;
-            background: linear-gradient(90deg, #58a6ff, #3fb950);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-size: 20px; font-weight: 600;
+            background: linear-gradient(90deg, #58a6ff, #a371f7);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
-        .header p {
-            color: #7d8590;
-            margin-top: 6px;
-            font-size: 13px;
-        }
-        .status-bar {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-top: 10px;
-            font-size: 13px;
-        }
-        .dot {
-            width: 10px; height: 10px; border-radius: 50%;
-            background: #f85149;
-            animation: pulse 1.2s infinite;
-        }
+        .header-right { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+        .status-bar { display: flex; align-items: center; gap: 6px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #f85149; animation: pulse 1.2s infinite; }
         .dot.connected { background: #3fb950; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-        .score-cards {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
-            margin-bottom: 20px;
+        .mode-tabs {
+            display: flex; gap: 8px; margin-bottom: 16px;
         }
+        .mode-tab {
+            padding: 8px 20px; border-radius: 6px; cursor: pointer;
+            background: #161b22; border: 1px solid #21303f;
+            font-size: 13px; color: #7d8590; transition: all .2s;
+        }
+        .mode-tab.active {
+            background: linear-gradient(90deg, #1f6feb, #8957e5);
+            color: #fff; border-color: transparent;
+        }
+
+        .fleet-stats {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px;
+        }
+        .stat-card {
+            background: #161b22; border: 1px solid #21303f; border-radius: 8px;
+            padding: 14px 16px;
+        }
+        .stat-card .label { font-size: 11px; color: #7d8590; margin-bottom: 6px; }
+        .stat-card .value { font-size: 24px; font-weight: 700; line-height: 1; }
+        .stat-card.blue .value { color: #58a6ff; }
+        .stat-card.green .value { color: #3fb950; }
+        .stat-card.yellow .value { color: #d29922; }
+        .stat-card.red .value { color: #f85149; }
+        .stat-card.purple .value { color: #a371f7; }
+
+        .main-grid {
+            display: grid; grid-template-columns: 320px 1fr; gap: 16px;
+        }
+
+        .vehicle-list {
+            background: #161b22; border: 1px solid #21303f; border-radius: 10px;
+            max-height: 720px; overflow: hidden; display: flex; flex-direction: column;
+        }
+        .vehicle-list-header {
+            padding: 12px 14px; border-bottom: 1px solid #21303f;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .vehicle-list-header h3 { font-size: 14px; color: #c9d1d9; }
+        .vehicle-list-header .filter { font-size: 11px; color: #7d8590; }
+        .vehicle-scroll { overflow-y: auto; flex: 1; }
+        .vehicle-item {
+            padding: 10px 14px; border-bottom: 1px solid #21303f; cursor: pointer;
+            transition: background .15s; display: flex; align-items: center; justify-content: space-between;
+        }
+        .vehicle-item:hover { background: #1c232c; }
+        .vehicle-item.selected { background: #1f6feb22; border-left: 3px solid #1f6feb; }
+        .vehicle-item.alerting { background: #f8514915; }
+        .vehicle-item.alerting.selected { background: #f8514925; border-left-color: #f85149; }
+        .vehicle-item .vinfo { display: flex; flex-direction: column; gap: 3px; }
+        .vehicle-item .vname { font-size: 13px; font-weight: 600; color: #e6edf3; }
+        .vehicle-item .vid { font-size: 11px; color: #7d8590; }
+        .vehicle-item .vscores { display: flex; gap: 6px; margin-top: 3px; }
+        .score-chip {
+            font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600;
+        }
+        .score-chip.agg-high { background: #f85149; color: #fff; }
+        .score-chip.agg-mid { background: #d29922; color: #fff; }
+        .score-chip.agg-low { background: #3fb950; color: #fff; }
+        .score-chip.offline { background: #30363d; color: #7d8590; }
+        .vehicle-item .vspeed { font-size: 14px; font-weight: 600; color: #58a6ff; }
+        .vehicle-item .vspeed small { font-size: 10px; font-weight: normal; color: #7d8590; }
+
+        .detail-panel { display: flex; flex-direction: column; gap: 16px; }
+
+        .summary-box {
+            background: #161b22; border: 1px solid #21303f; border-left: 4px solid #58a6ff;
+            border-radius: 8px; padding: 12px 16px; font-size: 13px; line-height: 1.7; color: #c9d1d9;
+        }
+        .summary-box .tag {
+            display: inline-block; padding: 2px 8px; background: #1f6feb33; color: #58a6ff;
+            border-radius: 4px; margin-right: 8px; font-size: 12px;
+        }
+        .summary-box .back-btn {
+            float: right; font-size: 12px; color: #7d8590; cursor: pointer;
+            padding: 3px 10px; border: 1px solid #30363d; border-radius: 4px;
+        }
+        .summary-box .back-btn:hover { color: #e6edf3; border-color: #58a6ff; }
+
+        .score-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
         .card {
-            background: #161b22;
-            border: 1px solid #21303f;
-            border-radius: 10px;
-            padding: 18px;
-            position: relative;
-            overflow: hidden;
+            background: #161b22; border: 1px solid #21303f; border-radius: 10px;
+            padding: 16px; position: relative; overflow: hidden;
         }
         .card::before {
-            content: "";
-            position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
         }
         .card.overall::before { background: linear-gradient(90deg, #58a6ff, #a371f7); }
         .card.aggressive::before { background: linear-gradient(90deg, #f85149, #d29922); }
         .card.fatigue::before { background: linear-gradient(90deg, #d29922, #db6d28); }
         .card.economy::before { background: linear-gradient(90deg, #3fb950, #58a6ff); }
-
-        .card .label {
-            font-size: 13px;
-            color: #7d8590;
-            margin-bottom: 8px;
-        }
-        .card .score {
-            font-size: 38px;
-            font-weight: 700;
-            line-height: 1;
-        }
+        .card .label { font-size: 12px; color: #7d8590; margin-bottom: 6px; }
+        .card .score { font-size: 32px; font-weight: 700; line-height: 1; }
         .card.overall .score { color: #58a6ff; }
         .card.aggressive .score { color: #f85149; }
         .card.fatigue .score { color: #d29922; }
         .card.economy .score { color: #3fb950; }
-        .card .sub {
-            font-size: 12px;
-            color: #7d8590;
-            margin-top: 6px;
-        }
+        .card .sub { font-size: 11px; color: #7d8590; margin-top: 6px; }
 
-        .summary-box {
-            background: #161b22;
-            border: 1px solid #21303f;
-            border-left: 4px solid #58a6ff;
-            border-radius: 8px;
-            padding: 14px 18px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            line-height: 1.7;
-            color: #c9d1d9;
-        }
-        .summary-box .tag {
-            display: inline-block;
-            padding: 2px 8px;
-            background: #1f6feb33;
-            color: #58a6ff;
-            border-radius: 4px;
-            margin-right: 8px;
-            font-size: 12px;
-        }
-
-        .charts-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-        .chart-box {
-            background: #161b22;
-            border: 1px solid #21303f;
-            border-radius: 10px;
-            padding: 14px;
-            height: 320px;
-        }
-        .chart-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #c9d1d9;
-            margin-bottom: 10px;
-            padding-left: 8px;
-            border-left: 3px solid #58a6ff;
-        }
-        .chart-box .echarts { width: 100%; height: calc(100% - 30px); }
-
-        .map-section {
-            background: #161b22;
-            border: 1px solid #21303f;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        .map-header {
-            padding: 12px 18px;
-            border-bottom: 1px solid #21303f;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .map-header .title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #c9d1d9;
-            padding-left: 8px;
-            border-left: 3px solid #3fb950;
-        }
-        .map-legend {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            font-size: 12px;
-            color: #7d8590;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .legend-color {
-            width: 14px; height: 10px; border-radius: 2px;
-        }
-        #map { height: 420px; background: #0d1117; }
-
-        .vehicle-info {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 14px;
-            margin-bottom: 20px;
-        }
+        .vehicle-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
         .info-card {
-            background: #161b22;
-            border: 1px solid #21303f;
-            border-radius: 10px;
-            padding: 14px 18px;
-            display: flex;
-            align-items: center;
-            gap: 14px;
+            background: #161b22; border: 1px solid #21303f; border-radius: 10px;
+            padding: 12px 16px; display: flex; align-items: center; gap: 14px;
         }
         .info-icon {
-            width: 40px; height: 40px;
-            border-radius: 8px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 20px;
+            width: 36px; height: 36px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center; font-size: 18px;
         }
         .info-card.speed .info-icon { background: #1f6feb33; }
         .info-card.rpm .info-icon { background: #8957e533; }
         .info-card.coord .info-icon { background: #3fb95033; }
-        .info-text .label { font-size: 12px; color: #7d8590; }
-        .info-text .value { font-size: 20px; font-weight: 600; color: #e6edf3; }
+        .info-text .label { font-size: 11px; color: #7d8590; }
+        .info-text .value { font-size: 18px; font-weight: 600; color: #e6edf3; }
 
         .watermark-bar {
-            background: #161b22;
-            border: 1px solid #21303f;
-            border-left: 4px solid #a371f7;
-            border-radius: 8px;
-            padding: 14px 18px;
-            margin-bottom: 20px;
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 16px;
+            background: #161b22; border: 1px solid #21303f; border-left: 4px solid #a371f7;
+            border-radius: 8px; padding: 10px 16px; display: grid;
+            grid-template-columns: repeat(5, 1fr); gap: 10px;
         }
         .wm-item { text-align: center; }
-        .wm-item .wm-label { font-size: 11px; color: #7d8590; margin-bottom: 4px; }
-        .wm-item .wm-value { font-size: 16px; font-weight: 600; }
+        .wm-item .wm-label { font-size: 10px; color: #7d8590; margin-bottom: 3px; }
+        .wm-item .wm-value { font-size: 14px; font-weight: 600; }
         .wm-item .wm-value.purple { color: #a371f7; }
         .wm-item .wm-value.cyan { color: #39d2c0; }
         .wm-item .wm-value.yellow { color: #d29922; }
         .wm-item .wm-value.red { color: #f85149; }
         .wm-item .wm-value.green { color: #3fb950; }
 
-        @media (max-width: 1024px) {
-            .score-cards, .charts-grid, .vehicle-info {
-                grid-template-columns: repeat(2, 1fr);
-            }
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .chart-box {
+            background: #161b22; border: 1px solid #21303f;
+            border-radius: 10px; padding: 12px; height: 280px;
         }
-        @media (max-width: 640px) {
-            .score-cards, .charts-grid, .vehicle-info {
-                grid-template-columns: 1fr;
+        .chart-title {
+            font-size: 13px; font-weight: 600; color: #c9d1d9;
+            margin-bottom: 8px; padding-left: 8px; border-left: 3px solid #58a6ff;
+        }
+        .chart-box .echarts { width: 100%; height: calc(100% - 26px); }
+
+        .map-section {
+            background: #161b22; border: 1px solid #21303f; border-radius: 10px; overflow: hidden;
+        }
+        .map-header {
+            padding: 10px 16px; border-bottom: 1px solid #21303f;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .map-header .title {
+            font-size: 13px; font-weight: 600; color: #c9d1d9;
+            padding-left: 8px; border-left: 3px solid #3fb950;
+        }
+        .map-legend { display: flex; align-items: center; gap: 12px; font-size: 11px; color: #7d8590; }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .legend-color { width: 12px; height: 9px; border-radius: 2px; }
+        #map { height: 380px; background: #0d1117; }
+
+        .alert-panel {
+            background: #161b22; border: 1px solid #21303f; border-radius: 10px;
+            max-height: 400px; display: flex; flex-direction: column; overflow: hidden;
+        }
+        .alert-header {
+            padding: 12px 14px; border-bottom: 1px solid #21303f;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .alert-header h3 { font-size: 14px; color: #c9d1d9; }
+        .alert-header h3::before { content: "⚠️ "; margin-right: 4px; }
+        .alert-scroll { overflow-y: auto; flex: 1; }
+        .alert-item {
+            padding: 10px 14px; border-bottom: 1px solid #21303f;
+            border-left: 3px solid transparent; cursor: pointer;
+        }
+        .alert-item.warning { border-left-color: #d29922; background: #d2992208; }
+        .alert-item.critical { border-left-color: #f85149; background: #f8514910; }
+        .alert-item:hover { background: #1c232c; }
+        .alert-item .atop {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;
+        }
+        .alert-item .atype { font-size: 12px; font-weight: 600; }
+        .alert-item.warning .atype { color: #d29922; }
+        .alert-item.critical .atype { color: #f85149; }
+        .alert-item .atime { font-size: 10px; color: #7d8590; }
+        .alert-item .amsg { font-size: 12px; color: #c9d1d9; line-height: 1.5; }
+        .alert-item .asub { font-size: 10px; color: #7d8590; margin-top: 3px; }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+            display: none; align-items: center; justify-content: center; z-index: 999;
+            animation: fadeIn .2s;
+        }
+        .modal-overlay.show { display: flex; }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        .modal-box {
+            background: #161b22; border: 2px solid #f85149; border-radius: 12px;
+            width: 440px; padding: 24px; animation: slideIn .3s;
+        }
+        @keyframes slideIn { from{transform:translateY(-30px);opacity:0} to{transform:translateY(0);opacity:1} }
+        .modal-box.warning { border-color: #d29922; }
+        .modal-box h2 {
+            font-size: 20px; color: #f85149; margin-bottom: 12px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .modal-box.warning h2 { color: #d29922; }
+        .modal-box .mbody { color: #c9d1d9; font-size: 14px; line-height: 1.8; margin-bottom: 18px; }
+        .modal-box .mbody strong { color: #e6edf3; }
+        .modal-box .mdetail {
+            background: #0d1117; border-radius: 6px; padding: 12px;
+            margin-top: 10px; font-size: 12px; color: #7d8590; line-height: 1.7;
+        }
+        .modal-box .mactions { display: flex; gap: 10px; justify-content: flex-end; }
+        .modal-box button {
+            padding: 8px 18px; border-radius: 6px; border: 1px solid #30363d;
+            background: #21262d; color: #c9d1d9; font-size: 13px; cursor: pointer;
+        }
+        .modal-box button.primary {
+            background: #1f6feb; border-color: #1f6feb; color: #fff;
+        }
+        .modal-box button:hover { background: #30363d; }
+        .modal-box button.primary:hover { background: #388bfd; }
+
+        .empty-state {
+            background: #161b22; border: 1px dashed #30363d; border-radius: 10px;
+            padding: 60px 20px; text-align: center; color: #7d8590;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+        .empty-state h3 { font-size: 16px; color: #c9d1d9; margin-bottom: 8px; }
+        .empty-state p { font-size: 13px; }
+
+        @media (max-width: 1200px) {
+            .fleet-stats { grid-template-columns: repeat(3, 1fr); }
+            .main-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 768px) {
+            .fleet-stats, .score-cards, .vehicle-info, .watermark-bar, .charts-grid {
+                grid-template-columns: 1fr 1fr;
             }
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🚗 车联网驾驶员行为画像实时分析系统</h1>
-        <p>基于滑动窗口（5 分钟）实时计算激进指数 · 疲劳指数 · 经济性指数</p>
-        <div class="status-bar">
-            <span id="statusDot" class="dot"></span>
-            <span id="statusText">正在连接 WebSocket...</span>
+        <h1>🚗 车联网车队驾驶员行为画像系统 v3</h1>
+        <div class="header-right">
+            <div class="status-bar">
+                <span id="statusDot" class="dot"></span>
+                <span id="statusText">连接中...</span>
+            </div>
+            <div id="vehicleCount" style="color:#7d8590;">车辆: 0/0</div>
         </div>
     </div>
 
-    <div class="score-cards">
-        <div class="card overall">
-            <div class="label">综合驾驶评分</div>
-            <div class="score" id="overallScore">--</div>
-            <div class="sub">满分 100 · 越高越安全经济</div>
-        </div>
-        <div class="card aggressive">
-            <div class="label">激进指数</div>
-            <div class="score" id="aggressiveScore">--</div>
-            <div class="sub">急加速 <span id="accelCount">0</span> · 急减速 <span id="decelCount">0</span> · 急转弯 <span id="steerCount">0</span></div>
-        </div>
-        <div class="card fatigue">
-            <div class="label">疲劳指数</div>
-            <div class="score" id="fatigueScore">--</div>
-            <div class="sub">方向稳定段 <span id="stableCount">0</span> · 曲率偏离 <span id="curvCount">0</span></div>
-        </div>
-        <div class="card economy">
-            <div class="label">经济性指数</div>
-            <div class="score" id="economyScore">--</div>
-            <div class="sub">平均油耗 <span id="avgFuel">--</span> L/100km · 滑行比 <span id="coastRatio">--</span></div>
-        </div>
+    <div class="mode-tabs">
+        <div class="mode-tab active" id="tabFleet" onclick="switchMode('fleet')">📊 车队总览</div>
+        <div class="mode-tab" id="tabDetail" onclick="switchMode('detail')">🔍 单车下钻</div>
     </div>
 
-    <div class="summary-box">
-        <span class="tag">AI 摘要</span>
-        <span id="summaryText">等待数据接入...</span>
-    </div>
-
-    <div class="vehicle-info">
-        <div class="info-card speed">
-            <div class="info-icon">⚡</div>
-            <div class="info-text">
-                <div class="label">当前车速</div>
-                <div class="value"><span id="curSpeed">0</span> km/h</div>
+    <div id="fleetMode">
+        <div class="fleet-stats">
+            <div class="stat-card blue">
+                <div class="label">在管车辆</div>
+                <div class="value" id="statTotal">0</div>
+            </div>
+            <div class="stat-card green">
+                <div class="label">在线车辆</div>
+                <div class="value" id="statOnline">0</div>
+            </div>
+            <div class="stat-card purple">
+                <div class="label">综合平均分</div>
+                <div class="value" id="statAvgOverall">--</div>
+            </div>
+            <div class="stat-card yellow">
+                <div class="label">平均激进指数</div>
+                <div class="value" id="statAvgAgg">--</div>
+            </div>
+            <div class="stat-card red">
+                <div class="label">告警中车辆</div>
+                <div class="value" id="statAlert">0</div>
             </div>
         </div>
-        <div class="info-card rpm">
-            <div class="info-icon">⚙️</div>
-            <div class="info-text">
-                <div class="label">发动机转速</div>
-                <div class="value"><span id="curRpm">0</span> RPM</div>
+        <div class="main-grid">
+            <div class="vehicle-list">
+                <div class="vehicle-list-header">
+                    <h3>🚛 车辆列表</h3>
+                    <span class="filter">点击查看详情</span>
+                </div>
+                <div class="vehicle-scroll" id="vehicleList"></div>
             </div>
-        </div>
-        <div class="info-card coord">
-            <div class="info-icon">📍</div>
-            <div class="info-text">
-                <div class="label">GPS 坐标</div>
-                <div class="value" id="curCoord">--</div>
+            <div class="detail-panel">
+                <div class="alert-panel">
+                    <div class="alert-header">
+                        <h3>实时告警</h3>
+                        <span style="font-size:11px;color:#7d8590">最近 30 条</span>
+                    </div>
+                    <div class="alert-scroll" id="alertList"></div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">车队评分分布（车辆数）</div>
+                    <div id="fleetChart" class="echarts"></div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="watermark-bar">
-        <div class="wm-item">
-            <div class="wm-label">事件时间水印</div>
-            <div class="wm-value purple" id="wmWatermark">--</div>
+    <div id="detailMode" style="display:none;">
+        <div class="summary-box">
+            <span class="back-btn" onclick="switchMode('fleet')">← 返回车队总览</span>
+            <span class="tag" id="detailTag">单车详情</span>
+            <span id="detailSummary">请从左侧选择一辆车...</span>
         </div>
-        <div class="wm-item">
-            <div class="wm-label">最大事件时间</div>
-            <div class="wm-value cyan" id="wmMaxEvent">--</div>
-        </div>
-        <div class="wm-item">
-            <div class="wm-label">宽容度 (Allowed Lateness)</div>
-            <div class="wm-value yellow" id="wmLateness">--</div>
-        </div>
-        <div class="wm-item">
-            <div class="wm-label">迟到数据已接纳</div>
-            <div class="wm-value red" id="wmLateCount">0</div>
-        </div>
-        <div class="wm-item">
-            <div class="wm-label">丢弃数据</div>
-            <div class="wm-value green" id="wmDropCount">0</div>
-        </div>
-    </div>
-
-    <div class="charts-grid">
-        <div class="chart-box">
-            <div class="chart-title">三项指数实时趋势（最近 5 分钟）</div>
-            <div id="trendChart" class="echarts"></div>
-        </div>
-        <div class="chart-box">
-            <div class="chart-title">综合评分雷达（0-100）</div>
-            <div id="radarChart" class="echarts"></div>
-        </div>
-    </div>
-
-    <div class="map-section">
-        <div class="map-header">
-            <div class="title">实时行驶轨迹 · 颜色代表该点激进指数</div>
-            <div class="map-legend">
-                <div class="legend-item"><span class="legend-color" style="background:#3fb950"></span>温和</div>
-                <div class="legend-item"><span class="legend-color" style="background:#d29922"></span>一般</div>
-                <div class="legend-item"><span class="legend-color" style="background:#f85149"></span>激进</div>
+        <div class="score-cards">
+            <div class="card overall">
+                <div class="label">综合驾驶评分</div>
+                <div class="score" id="overallScore">--</div>
+                <div class="sub">满分 100 · 越高越安全经济</div>
+            </div>
+            <div class="card aggressive">
+                <div class="label">激进指数</div>
+                <div class="score" id="aggressiveScore">--</div>
+                <div class="sub">急加速 <span id="accelCount">0</span> · 急减速 <span id="decelCount">0</span> · 急转弯 <span id="steerCount">0</span></div>
+            </div>
+            <div class="card fatigue">
+                <div class="label">疲劳指数</div>
+                <div class="score" id="fatigueScore">--</div>
+                <div class="sub">方向稳定段 <span id="stableCount">0</span> · 曲率偏离 <span id="curvCount">0</span></div>
+            </div>
+            <div class="card economy">
+                <div class="label">经济性指数</div>
+                <div class="score" id="economyScore">--</div>
+                <div class="sub">平均油耗 <span id="avgFuel">--</span> L · 滑行比 <span id="coastRatio">--</span></div>
             </div>
         </div>
-        <div id="map"></div>
+
+        <div class="vehicle-info">
+            <div class="info-card speed">
+                <div class="info-icon">⚡</div>
+                <div class="info-text">
+                    <div class="label">当前车速</div>
+                    <div class="value"><span id="curSpeed">0</span> km/h</div>
+                </div>
+            </div>
+            <div class="info-card rpm">
+                <div class="info-icon">⚙️</div>
+                <div class="info-text">
+                    <div class="label">发动机转速</div>
+                    <div class="value"><span id="curRpm">0</span> RPM</div>
+                </div>
+            </div>
+            <div class="info-card coord">
+                <div class="info-icon">📍</div>
+                <div class="info-text">
+                    <div class="label">GPS 坐标</div>
+                    <div class="value" id="curCoord">--</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="watermark-bar">
+            <div class="wm-item"><div class="wm-label">事件时间水印</div><div class="wm-value purple" id="wmWatermark">--</div></div>
+            <div class="wm-item"><div class="wm-label">最大事件时间</div><div class="wm-value cyan" id="wmMaxEvent">--</div></div>
+            <div class="wm-item"><div class="wm-label">宽容度</div><div class="wm-value yellow" id="wmLateness">--</div></div>
+            <div class="wm-item"><div class="wm-label">迟到接纳数</div><div class="wm-value red" id="wmLateCount">0</div></div>
+            <div class="wm-item"><div class="wm-label">丢弃数据</div><div class="wm-value green" id="wmDropCount">0</div></div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-box">
+                <div class="chart-title">三项指数实时趋势</div>
+                <div id="trendChart" class="echarts"></div>
+            </div>
+            <div class="chart-box">
+                <div class="chart-title">综合评分雷达</div>
+                <div id="radarChart" class="echarts"></div>
+            </div>
+        </div>
+
+        <div class="map-section">
+            <div class="map-header">
+                <div class="title">实时行驶轨迹 · 颜色=激进指数</div>
+                <div class="map-legend">
+                    <div class="legend-item"><span class="legend-color" style="background:#3fb950"></span>温和</div>
+                    <div class="legend-item"><span class="legend-color" style="background:#d29922"></span>一般</div>
+                    <div class="legend-item"><span class="legend-color" style="background:#f85149"></span>激进</div>
+                </div>
+            </div>
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="alertModal">
+        <div class="modal-box" id="modalBox">
+            <h2 id="modalTitle">⚠️ 异常告警</h2>
+            <div class="mbody" id="modalBody"></div>
+            <div class="mactions">
+                <button onclick="closeModal()">知道了</button>
+                <button class="primary" onclick="closeModalAndDrill()">查看详情 →</button>
+            </div>
+        </div>
     </div>
 
     <script>
-    (function () {
-        const WS_URL = `ws://${location.hostname}:8765`;
-        const MAX_POINTS = 120;
+    const WS_URL = `ws://${location.hostname}:8765`;
+    let currentMode = "fleet";
+    let selectedVehicle = null;
+    let pendingDrillVehicle = null;
 
-        let trendChart = echarts.init(document.getElementById("trendChart"), "dark");
-        let radarChart = echarts.init(document.getElementById("radarChart"), "dark");
+    let fleetChart = null;
+    let trendChart = null;
+    let radarChart = null;
+    let map = null;
+    let trajectoryLayer = null;
+    let vehicleMarker = null;
+    let lastPoint = null;
 
-        let trendData = {
-            time: [],
-            aggressive: [],
-            fatigue: [],
-            economy: [],
-            overall: []
-        };
-        let currentAggressive = 50;
+    let trendData = { time: [], aggressive: [], fatigue: [], economy: [], overall: [] };
+    let currentAggressive = 50;
 
-        const map = L.map("map", { zoomControl: true }).setView([39.9042, 116.4074], 14);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap",
-            maxZoom: 19
-        }).addTo(map);
+    let recentAlerts = [];
+    let vehicleData = {};
 
-        let trajectoryLayer = L.layerGroup().addTo(map);
-        let vehicleMarker = null;
-        let lastPoint = null;
-        let allTrajectory = [];
-
-        function getColorByAggressive(score) {
-            if (score < 35) return "#3fb950";
-            if (score < 65) return "#d29922";
-            return "#f85149";
+    function switchMode(mode) {
+        currentMode = mode;
+        document.getElementById("tabFleet").classList.toggle("active", mode === "fleet");
+        document.getElementById("tabDetail").classList.toggle("active", mode === "detail");
+        document.getElementById("fleetMode").style.display = mode === "fleet" ? "" : "none";
+        document.getElementById("detailMode").style.display = mode === "detail" ? "" : "none";
+        if (mode === "detail") {
+            setTimeout(() => {
+                if (trendChart) trendChart.resize();
+                if (radarChart) radarChart.resize();
+                if (map) map.invalidateSize();
+            }, 100);
+        } else {
+            if (fleetChart) setTimeout(() => fleetChart.resize(), 100);
         }
+    }
 
-        function addTrajectoryPoint(pt, aggressive) {
-            allTrajectory.push({ ...pt, aggressive });
-            if (allTrajectory.length > 500) allTrajectory.shift();
-
-            if (lastPoint) {
-                const color = getColorByAggressive(aggressive);
-                L.polyline([
-                    [lastPoint.lat, lastPoint.lon],
-                    [pt.lat, pt.lon]
-                ], { color, weight: 4, opacity: 0.85 }).addTo(trajectoryLayer);
-            }
-            lastPoint = pt;
-
-            if (!vehicleMarker) {
-                vehicleMarker = L.circleMarker([pt.lat, pt.lon], {
-                    radius: 9,
-                    fillColor: "#58a6ff",
-                    color: "#fff",
-                    weight: 2,
-                    fillOpacity: 1
-                }).addTo(map);
-            } else {
-                vehicleMarker.setLatLng([pt.lat, pt.lon]);
-            }
-            map.panTo([pt.lat, pt.lon]);
+    function drillDown(vehicleId) {
+        selectedVehicle = vehicleId;
+        const v = vehicleData[vehicleId];
+        document.getElementById("detailTag").textContent = v ? v.vehicle_name : vehicleId;
+        switchMode("detail");
+        if (window.ws && window.ws.readyState === 1) {
+            window.ws.send(JSON.stringify({ type: "drill_down", vehicle_id: vehicleId }));
         }
+    }
 
-        function updateTrendChart() {
-            trendChart.setOption({
-                backgroundColor: "transparent",
-                tooltip: { trigger: "axis" },
-                legend: {
-                    data: ["激进指数", "疲劳指数", "经济性指数", "综合评分"],
-                    textStyle: { color: "#8b949e" },
-                    top: 0
-                },
-                grid: { left: 45, right: 20, top: 40, bottom: 30 },
-                xAxis: {
-                    type: "category",
-                    boundaryGap: false,
-                    data: trendData.time,
-                    axisLine: { lineStyle: { color: "#30363d" } },
-                    axisLabel: { color: "#8b949e", fontSize: 10 }
-                },
-                yAxis: {
-                    type: "value", min: 0, max: 100,
-                    axisLine: { lineStyle: { color: "#30363d" } },
-                    splitLine: { lineStyle: { color: "#21262d" } },
-                    axisLabel: { color: "#8b949e" }
-                },
-                series: [
-                    {
-                        name: "激进指数", type: "line", smooth: true,
-                        data: trendData.aggressive,
-                        itemStyle: { color: "#f85149" },
-                        lineStyle: { width: 2 },
-                        areaStyle: { color: "rgba(248,81,73,0.08)" }
-                    },
-                    {
-                        name: "疲劳指数", type: "line", smooth: true,
-                        data: trendData.fatigue,
-                        itemStyle: { color: "#d29922" },
-                        lineStyle: { width: 2 },
-                        areaStyle: { color: "rgba(210,153,34,0.08)" }
-                    },
-                    {
-                        name: "经济性指数", type: "line", smooth: true,
-                        data: trendData.economy,
-                        itemStyle: { color: "#3fb950" },
-                        lineStyle: { width: 2 },
-                        areaStyle: { color: "rgba(63,185,80,0.08)" }
-                    },
-                    {
-                        name: "综合评分", type: "line", smooth: true,
-                        data: trendData.overall,
-                        itemStyle: { color: "#58a6ff" },
-                        lineStyle: { width: 3, type: "dashed" }
-                    }
+    function renderVehicleList() {
+        const list = document.getElementById("vehicleList");
+        const items = Object.values(vehicleData).sort((a, b) => {
+            const aAlert = (a.aggressive_index || 0) >= 75 || (a.fatigue_index || 0) >= 70;
+            const bAlert = (b.aggressive_index || 0) >= 75 || (b.fatigue_index || 0) >= 70;
+            if (aAlert !== bAlert) return aAlert ? -1 : 1;
+            return (b.overall_score || 0) - (a.overall_score || 0);
+        });
+
+        let html = "";
+        for (const v of items) {
+            const alerting = (v.aggressive_index || 0) >= 75 || (v.fatigue_index || 0) >= 70;
+            const sel = v.vehicle_id === selectedVehicle ? "selected" : "";
+            const alc = alerting ? "alerting" : "";
+            let chipClass = "score-chip offline";
+            let chipText = "--";
+            if (v.aggressive_index != null) {
+                if (v.aggressive_index >= 65) { chipClass = "score-chip agg-high"; chipText = "激进 " + v.aggressive_index; }
+                else if (v.aggressive_index >= 35) { chipClass = "score-chip agg-mid"; chipText = "一般 " + v.aggressive_index; }
+                else { chipClass = "score-chip agg-low"; chipText = "温和 " + v.aggressive_index; }
+            }
+            html += `
+                <div class="vehicle-item ${sel} ${alc}" onclick="drillDown('${v.vehicle_id}')">
+                    <div class="vinfo">
+                        <div class="vname">${v.vehicle_name || v.vehicle_id} ${alerting ? ' 🔴' : ''}</div>
+                        <div class="vid">${v.vehicle_id}${v.online ? '' : ' · 离线'}</div>
+                        <div class="vscores"><span class="${chipClass}">${chipText}</span></div>
+                    </div>
+                    <div class="vspeed">${v.latest_speed || 0}<small> km/h</small></div>
+                </div>`;
+        }
+        list.innerHTML = html;
+    }
+
+    function renderAlertList() {
+        const list = document.getElementById("alertList");
+        if (recentAlerts.length === 0) {
+            list.innerHTML = `<div style="padding:30px;text-align:center;color:#7d8590;font-size:12px;">暂无告警</div>`;
+            return;
+        }
+        let html = "";
+        for (const a of recentAlerts.slice().reverse()) {
+            const t = new Date(a.timestamp);
+            const ts = `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}:${t.getSeconds().toString().padStart(2,'0')}`;
+            const typeName = a.alert_type === "aggressive" ? "激进驾驶" : "疲劳驾驶";
+            html += `
+                <div class="alert-item ${a.severity}" onclick="drillDown('${a.vehicle_id}')">
+                    <div class="atop">
+                        <span class="atype">${a.severity === 'critical' ? '🔴 严重' : '🟡 警告'} · ${typeName}</span>
+                        <span class="atime">${ts}</span>
+                    </div>
+                    <div class="amsg">${a.message}</div>
+                    <div class="asub">车辆 ${a.vehicle_id} · 指数 ${a.index_value} (阈值 ${a.threshold})</div>
+                </div>`;
+        }
+        list.innerHTML = html;
+    }
+
+    function showAlertModal(alert) {
+        const typeName = alert.alert_type === "aggressive" ? "激进驾驶" : "疲劳驾驶";
+        document.getElementById("modalTitle").textContent =
+            (alert.severity === "critical" ? "🚨 严重告警：" : "⚠️ 警告：") + typeName;
+        document.getElementById("modalBox").className = "modal-box " + alert.severity;
+        document.getElementById("modalBody").innerHTML = `
+            <strong>${alert.message}</strong>
+            <div class="mdetail">
+                车辆 ID: ${alert.vehicle_id}<br>
+                告警类型: ${typeName}<br>
+                严重程度: ${alert.severity === 'critical' ? '严重' : '警告'}<br>
+                当前指数: ${alert.index_value} (阈值 ${alert.threshold})<br>
+                事件时间: ${new Date(alert.timestamp).toLocaleString('zh-CN')}
+            </div>`;
+        pendingDrillVehicle = alert.vehicle_id;
+        document.getElementById("alertModal").classList.add("show");
+    }
+    function closeModal() {
+        document.getElementById("alertModal").classList.remove("show");
+        pendingDrillVehicle = null;
+    }
+    function closeModalAndDrill() {
+        const vid = pendingDrillVehicle;
+        closeModal();
+        if (vid) drillDown(vid);
+    }
+
+    function initFleetChart() {
+        fleetChart = echarts.init(document.getElementById("fleetChart"), "dark");
+        updateFleetChart();
+    }
+    function updateFleetChart() {
+        if (!fleetChart) return;
+        const buckets = { excellent: 0, good: 0, fair: 0, poor: 0, none: 0 };
+        for (const v of Object.values(vehicleData)) {
+            const s = v.overall_score;
+            if (s == null) buckets.none++;
+            else if (s >= 80) buckets.excellent++;
+            else if (s >= 60) buckets.good++;
+            else if (s >= 40) buckets.fair++;
+            else buckets.poor++;
+        }
+        fleetChart.setOption({
+            backgroundColor: "transparent",
+            tooltip: {},
+            legend: { textStyle: { color: "#8b949e" }, top: 0 },
+            series: [{
+                type: "pie", radius: ["45%", "72%"], center: ["50%", "58%"],
+                label: { color: "#c9d1d9", fontSize: 11 },
+                data: [
+                    { value: buckets.excellent, name: "优秀(≥80)", itemStyle: { color: "#3fb950" } },
+                    { value: buckets.good, name: "良好(60-80)", itemStyle: { color: "#58a6ff" } },
+                    { value: buckets.fair, name: "一般(40-60)", itemStyle: { color: "#d29922" } },
+                    { value: buckets.poor, name: "较差(<40)", itemStyle: { color: "#f85149" } },
+                    { value: buckets.none, name: "暂无数据", itemStyle: { color: "#30363d" } }
                 ]
-            });
-        }
+            }]
+        });
+    }
 
-        function updateRadarChart(data) {
-            radarChart.setOption({
-                backgroundColor: "transparent",
-                tooltip: {},
-                radar: {
-                    indicator: [
-                        { name: "安全性(反激进)", max: 100 },
-                        { name: "清醒度(反疲劳)", max: 100 },
-                        { name: "经济性", max: 100 },
-                        { name: "综合", max: 100 }
-                    ],
-                    axisName: { color: "#8b949e" },
-                    splitLine: { lineStyle: { color: "#21262d" } },
-                    splitArea: { areaStyle: { color: ["rgba(33,48,63,0.3)", "rgba(33,48,63,0.1)"] } },
-                    axisLine: { lineStyle: { color: "#30363d" } }
-                },
-                series: [{
-                    type: "radar",
-                    data: [{
-                        value: [
-                            100 - data.aggressive_index,
-                            100 - data.fatigue_index,
-                            data.economy_index,
-                            data.overall_score
-                        ],
-                        name: "当前评分",
-                        areaStyle: { color: "rgba(88,166,255,0.25)" },
-                        lineStyle: { color: "#58a6ff", width: 2 },
-                        itemStyle: { color: "#58a6ff" }
-                    }]
+    function initDetailCharts() {
+        trendChart = echarts.init(document.getElementById("trendChart"), "dark");
+        radarChart = echarts.init(document.getElementById("radarChart"), "dark");
+        map = L.map("map", { zoomControl: true }).setView([39.9042, 116.4074], 13);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "&copy; OSM", maxZoom: 19
+        }).addTo(map);
+        trajectoryLayer = L.layerGroup().addTo(map);
+    }
+
+    function getColorByAggressive(score) {
+        if (score < 35) return "#3fb950";
+        if (score < 65) return "#d29922";
+        return "#f85149";
+    }
+
+    function addTrajectoryPoint(pt, aggressive) {
+        if (!map) return;
+        if (lastPoint) {
+            L.polyline([[lastPoint.lat, lastPoint.lon], [pt.lat, pt.lon]], {
+                color: getColorByAggressive(aggressive), weight: 4, opacity: 0.85
+            }).addTo(trajectoryLayer);
+        }
+        lastPoint = pt;
+        if (!vehicleMarker) {
+            vehicleMarker = L.circleMarker([pt.lat, pt.lon], {
+                radius: 9, fillColor: "#58a6ff", color: "#fff", weight: 2, fillOpacity: 1
+            }).addTo(map);
+        } else {
+            vehicleMarker.setLatLng([pt.lat, pt.lon]);
+        }
+        map.panTo([pt.lat, pt.lon]);
+    }
+
+    function updateTrendChart() {
+        if (!trendChart) return;
+        trendChart.setOption({
+            backgroundColor: "transparent", tooltip: { trigger: "axis" },
+            legend: {
+                data: ["激进指数", "疲劳指数", "经济性指数", "综合评分"],
+                textStyle: { color: "#8b949e" }, top: 0
+            },
+            grid: { left: 40, right: 15, top: 35, bottom: 25 },
+            xAxis: {
+                type: "category", boundaryGap: false, data: trendData.time,
+                axisLine: { lineStyle: { color: "#30363d" } },
+                axisLabel: { color: "#8b949e", fontSize: 10 }
+            },
+            yAxis: {
+                type: "value", min: 0, max: 100,
+                axisLine: { lineStyle: { color: "#30363d" } },
+                splitLine: { lineStyle: { color: "#21262d" } },
+                axisLabel: { color: "#8b949e" }
+            },
+            series: [
+                { name: "激进指数", type: "line", smooth: true, data: trendData.aggressive,
+                  itemStyle: { color: "#f85149" }, lineStyle: { width: 2 },
+                  areaStyle: { color: "rgba(248,81,73,0.08)" } },
+                { name: "疲劳指数", type: "line", smooth: true, data: trendData.fatigue,
+                  itemStyle: { color: "#d29922" }, lineStyle: { width: 2 },
+                  areaStyle: { color: "rgba(210,153,34,0.08)" } },
+                { name: "经济性指数", type: "line", smooth: true, data: trendData.economy,
+                  itemStyle: { color: "#3fb950" }, lineStyle: { width: 2 },
+                  areaStyle: { color: "rgba(63,185,80,0.08)" } },
+                { name: "综合评分", type: "line", smooth: true, data: trendData.overall,
+                  itemStyle: { color: "#58a6ff" }, lineStyle: { width: 3, type: "dashed" } }
+            ]
+        });
+    }
+
+    function updateRadarChart(d) {
+        if (!radarChart) return;
+        radarChart.setOption({
+            backgroundColor: "transparent", tooltip: {},
+            radar: {
+                indicator: [
+                    { name: "安全性", max: 100 }, { name: "清醒度", max: 100 },
+                    { name: "经济性", max: 100 }, { name: "综合", max: 100 }
+                ],
+                axisName: { color: "#8b949e" },
+                splitLine: { lineStyle: { color: "#21262d" } },
+                splitArea: { areaStyle: { color: ["rgba(33,48,63,0.3)", "rgba(33,48,63,0.1)"] } },
+                axisLine: { lineStyle: { color: "#30363d" } }
+            },
+            series: [{
+                type: "radar",
+                data: [{
+                    value: [100 - d.aggressive_index, 100 - d.fatigue_index, d.economy_index, d.overall_score],
+                    name: "当前评分",
+                    areaStyle: { color: "rgba(88,166,255,0.25)" },
+                    lineStyle: { color: "#58a6ff", width: 2 },
+                    itemStyle: { color: "#58a6ff" }
                 }]
-            });
+            }]
+        });
+    }
+
+    function handleFleetSummary(payload) {
+        document.getElementById("statTotal").textContent = payload.data.total_vehicles;
+        document.getElementById("statOnline").textContent = payload.data.online_vehicles;
+        document.getElementById("statAvgOverall").textContent = payload.data.avg_overall || "--";
+        document.getElementById("statAvgAgg").textContent = payload.data.avg_aggressive || "--";
+        document.getElementById("statAlert").textContent = payload.data.alerting_count;
+        document.getElementById("vehicleCount").textContent =
+            `车辆: ${payload.data.online_vehicles}/${payload.data.total_vehicles}在线`;
+
+        for (const v of payload.vehicles || []) {
+            vehicleData[v.vehicle_id] = { ...vehicleData[v.vehicle_id], ...v };
+        }
+        if (payload.recent_alerts) {
+            const ids = new Set(recentAlerts.map(a => a.alert_id));
+            for (const a of payload.recent_alerts) {
+                if (!ids.has(a.alert_id)) recentAlerts.push(a);
+            }
+            if (recentAlerts.length > 50) recentAlerts = recentAlerts.slice(-50);
+        }
+        renderVehicleList();
+        renderAlertList();
+        updateFleetChart();
+    }
+
+    function handleVehicleUpdate(payload) {
+        const vid = payload.vehicle_id;
+        const d = payload.data;
+        vehicleData[vid] = {
+            ...vehicleData[vid],
+            vehicle_id: vid,
+            vehicle_name: payload.vehicle_name,
+            overall_score: d.overall_score,
+            aggressive_index: d.aggressive_index,
+            fatigue_index: d.fatigue_index,
+            economy_index: d.economy_index,
+            latest_speed: d.latest_vehicle?.speed,
+            latest_gps: d.latest_vehicle?.gps,
+            online: true
+        };
+
+        if (selectedVehicle === vid) updateDetailView(payload);
+        if (currentMode === "fleet") {
+            renderVehicleList();
+            updateFleetChart();
+        }
+    }
+
+    function updateDetailView(payload) {
+        const d = payload.data;
+        currentAggressive = d.aggressive_index;
+
+        document.getElementById("detailSummary").textContent = d.summary;
+        document.getElementById("overallScore").textContent = d.overall_score;
+        document.getElementById("aggressiveScore").textContent = d.aggressive_index;
+        document.getElementById("fatigueScore").textContent = d.fatigue_index;
+        document.getElementById("economyScore").textContent = d.economy_index;
+
+        document.getElementById("accelCount").textContent = d.details.aggressive.accel_count;
+        document.getElementById("decelCount").textContent = d.details.aggressive.decel_count;
+        document.getElementById("steerCount").textContent = d.details.aggressive.steer_count;
+        document.getElementById("stableCount").textContent = d.details.fatigue.stable_segments;
+        document.getElementById("curvCount").textContent = d.details.fatigue.curvature_events;
+        document.getElementById("avgFuel").textContent = d.details.economy.avg_fuel;
+        document.getElementById("coastRatio").textContent = (d.details.economy.coast_ratio * 100).toFixed(1) + "%";
+
+        const v = d.latest_vehicle;
+        document.getElementById("curSpeed").textContent = v.speed;
+        document.getElementById("curRpm").textContent = Math.round(v.rpm);
+        document.getElementById("curCoord").textContent = `${v.gps.lat.toFixed(5)}, ${v.gps.lon.toFixed(5)}`;
+
+        if (d.watermark_stats) {
+            const ws = d.watermark_stats;
+            const fmt = ts => (!ts || ts < 1e6) ? "--" : new Date(ts * 1000).toLocaleTimeString("zh-CN", { hour12: false });
+            document.getElementById("wmWatermark").textContent = fmt(ws.watermark);
+            document.getElementById("wmMaxEvent").textContent = fmt(ws.max_event_time);
+            document.getElementById("wmLateness").textContent = ws.allowed_lateness + "s";
+            document.getElementById("wmLateCount").textContent = ws.late_accepted_count;
+            document.getElementById("wmDropCount").textContent = ws.dropped_count;
         }
 
-        function updateDashboard(payload) {
-            const d = payload.data;
-            currentAggressive = d.aggressive_index;
-
-            document.getElementById("overallScore").textContent = d.overall_score;
-            document.getElementById("aggressiveScore").textContent = d.aggressive_index;
-            document.getElementById("fatigueScore").textContent = d.fatigue_index;
-            document.getElementById("economyScore").textContent = d.economy_index;
-
-            document.getElementById("accelCount").textContent = d.details.aggressive.accel_count;
-            document.getElementById("decelCount").textContent = d.details.aggressive.decel_count;
-            document.getElementById("steerCount").textContent = d.details.aggressive.steer_count;
-            document.getElementById("stableCount").textContent = d.details.fatigue.stable_segments;
-            document.getElementById("curvCount").textContent = d.details.fatigue.curvature_events;
-            document.getElementById("avgFuel").textContent = d.details.economy.avg_fuel;
-            document.getElementById("coastRatio").textContent = (d.details.economy.coast_ratio * 100).toFixed(1) + "%";
-
-            document.getElementById("summaryText").textContent = d.summary;
-
-            const v = d.latest_vehicle;
-            document.getElementById("curSpeed").textContent = v.speed;
-            document.getElementById("curRpm").textContent = Math.round(v.rpm);
-            document.getElementById("curCoord").textContent = `${v.gps.lat.toFixed(5)}, ${v.gps.lon.toFixed(5)}`;
-
-            if (d.watermark_stats) {
-                const ws = d.watermark_stats;
-                const fmtTs = (ts) => {
-                    if (!ts || ts < 1e6) return "--";
-                    const d = new Date(ts * 1000);
-                    return d.toLocaleTimeString("zh-CN", {hour12: false});
-                };
-                document.getElementById("wmWatermark").textContent = fmtTs(ws.watermark);
-                document.getElementById("wmMaxEvent").textContent = fmtTs(ws.max_event_time);
-                document.getElementById("wmLateness").textContent = ws.allowed_lateness + "s";
-                document.getElementById("wmLateCount").textContent = ws.late_accepted_count;
-                document.getElementById("wmDropCount").textContent = ws.dropped_count;
-            }
-
-            const t = new Date(d.timestamp);
-            const timeLabel = `${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}:${t.getSeconds().toString().padStart(2,"0")}`;
-            trendData.time.push(timeLabel);
-            trendData.aggressive.push(d.aggressive_index);
-            trendData.fatigue.push(d.fatigue_index);
-            trendData.economy.push(d.economy_index);
-            trendData.overall.push(d.overall_score);
-            while (trendData.time.length > MAX_POINTS) {
-                trendData.time.shift();
-                trendData.aggressive.shift();
-                trendData.fatigue.shift();
-                trendData.economy.shift();
-                trendData.overall.shift();
-            }
-
-            updateTrendChart();
-            updateRadarChart(d);
-
-            if (payload.trajectory && payload.trajectory.length) {
-                const pts = payload.trajectory;
-                const aggressiveStep = d.aggressive_index;
-                pts.forEach((pt, idx) => {
-                    const w = idx / pts.length;
-                    const agg = Math.max(0, Math.min(100, aggressiveStep * w + currentAggressive * (1 - w)));
-                    addTrajectoryPoint(pt, agg);
-                });
-            }
-        }
-
-        function setConnected(ok) {
-            const dot = document.getElementById("statusDot");
-            const txt = document.getElementById("statusText");
-            if (ok) {
-                dot.className = "dot connected";
-                txt.textContent = "实时数据连接正常";
-                txt.style.color = "#3fb950";
-            } else {
-                dot.className = "dot";
-                txt.textContent = "连接断开，尝试重连...";
-                txt.style.color = "#f85149";
-            }
-        }
-
-        function connectWS() {
-            let ws;
-            try {
-                ws = new WebSocket(WS_URL);
-            } catch (e) {
-                setConnected(false);
-                setTimeout(connectWS, 3000);
-                return;
-            }
-            ws.onopen = () => setConnected(true);
-            ws.onclose = () => { setConnected(false); setTimeout(connectWS, 3000); };
-            ws.onerror = () => { setConnected(false); };
-            ws.onmessage = (ev) => {
-                try {
-                    const payload = JSON.parse(ev.data);
-                    if (payload.type === "metrics") {
-                        updateDashboard(payload);
-                    }
-                } catch (err) {
-                    console.error("消息解析失败", err);
-                }
-            };
+        const t = new Date(d.timestamp);
+        const timeLabel = `${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}:${t.getSeconds().toString().padStart(2,"0")}`;
+        trendData.time.push(timeLabel);
+        trendData.aggressive.push(d.aggressive_index);
+        trendData.fatigue.push(d.fatigue_index);
+        trendData.economy.push(d.economy_index);
+        trendData.overall.push(d.overall_score);
+        while (trendData.time.length > 120) {
+            trendData.time.shift(); trendData.aggressive.shift();
+            trendData.fatigue.shift(); trendData.economy.shift(); trendData.overall.shift();
         }
 
         updateTrendChart();
-        updateRadarChart({
-            aggressive_index: 30, fatigue_index: 20,
-            economy_index: 60, overall_score: 50
-        });
+        updateRadarChart(d);
+
+        if (payload.trajectory && payload.trajectory.length > 0) {
+            if (trajectoryLayer) trajectoryLayer.clearLayers();
+            lastPoint = null;
+            const pts = payload.trajectory;
+            pts.forEach((pt, idx) => {
+                const w = idx / pts.length;
+                const agg = Math.max(0, Math.min(100, d.aggressive_index * w + currentAggressive * (1 - w)));
+                addTrajectoryPoint(pt, agg);
+            });
+        }
+    }
+
+    function handleAlert(alert) {
+        const ids = new Set(recentAlerts.map(a => a.alert_id));
+        if (!ids.has(alert.alert_id)) {
+            recentAlerts.push(alert);
+            if (recentAlerts.length > 50) recentAlerts = recentAlerts.slice(-50);
+        }
+        renderAlertList();
+        renderVehicleList();
+        showAlertModal(alert);
+    }
+
+    function setConnected(ok) {
+        const dot = document.getElementById("statusDot");
+        const txt = document.getElementById("statusText");
+        if (ok) {
+            dot.className = "dot connected";
+            txt.textContent = "实时连接正常";
+            txt.style.color = "#3fb950";
+        } else {
+            dot.className = "dot";
+            txt.textContent = "连接断开，重连中...";
+            txt.style.color = "#f85149";
+        }
+    }
+
+    function connectWS() {
+        let ws;
+        try { ws = new WebSocket(WS_URL); }
+        catch (e) { setConnected(false); setTimeout(connectWS, 3000); return; }
+        window.ws = ws;
+        ws.onopen = () => setConnected(true);
+        ws.onclose = () => { setConnected(false); setTimeout(connectWS, 3000); };
+        ws.onerror = () => { setConnected(false); };
+        ws.onmessage = ev => {
+            try {
+                const p = JSON.parse(ev.data);
+                if (p.type === "fleet_summary") handleFleetSummary(p);
+                else if (p.type === "vehicle_update") handleVehicleUpdate(p);
+                else if (p.type === "alert") handleAlert(p.data);
+            } catch (e) { console.error(e); }
+        };
+    }
+
+    window.addEventListener("load", () => {
+        initFleetChart();
+        initDetailCharts();
+        updateTrendChart();
+        updateRadarChart({ aggressive_index: 30, fatigue_index: 20, economy_index: 60, overall_score: 50 });
         connectWS();
         window.addEventListener("resize", () => {
-            trendChart.resize();
-            radarChart.resize();
+            if (trendChart) trendChart.resize();
+            if (radarChart) radarChart.resize();
+            if (fleetChart) fleetChart.resize();
+            if (map) map.invalidateSize();
         });
-    })();
+    });
     </script>
 </body>
 </html>

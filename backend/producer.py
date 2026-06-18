@@ -1,16 +1,17 @@
 """
-Kafka 数据生产者 v2 - 模拟车辆 CAN 总线数据 + 乱序模拟
+Kafka 数据生产者 v3 - 车队数据模拟器（50 辆车并发）
 
-v2 新增：
-  - OUT_OF_ORDER_MEAN 环境变量控制乱序程度
-  - 事件时间戳带随机延迟偏移（指数分布），模拟 Kafka 高峰期乱序
-  - 即使消息到达顺序与事件顺序不一致，消费者端水印机制也能正确处理
+v3 新增：
+  - FLEET_SIZE 环境变量控制车队规模（默认 50）
+  - 每辆车有独立的 vehicle_id（veh-001 ~ veh-050）和独立的运动状态
+  - 每条消息包含 vehicle_id 字段
+  - 车辆按车队轮转发送，每秒约 10 条/车 = 500 条/秒 总吞吐量
+  - 继续保留乱序延迟模拟
 """
 import json
 import time
 import random
 import math
-import sys
 import os
 
 try:
@@ -23,34 +24,30 @@ except ImportError:
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC = os.getenv("KAFKA_TOPIC", "vehicle_can")
-SEND_INTERVAL = float(os.getenv("SEND_INTERVAL", "0.1"))
+FLEET_SIZE = int(os.getenv("FLEET_SIZE", "50"))
+SEND_INTERVAL = float(os.getenv("SEND_INTERVAL", "0.02"))
 OUT_OF_ORDER_MEAN = float(os.getenv("OUT_OF_ORDER_MEAN", "2.0"))
 
 
 class VehicleSimulator:
-    """
-    车辆运动模拟器 v2 - 带乱序时间戳
+    """单车模拟器 - 每辆车独立状态"""
 
-    生成真实事件时间，但给时间戳减去一个随机延迟偏移，
-    模拟消息在 Kafka 传输中的乱序到达。
-    延迟偏移量服从指数分布，均值 = OUT_OF_ORDER_MEAN 秒。
-    """
-
-    def __init__(self, out_of_order_mean: float = OUT_OF_ORDER_MEAN):
+    def __init__(self, vehicle_id: str, out_of_order_mean: float = OUT_OF_ORDER_MEAN,
+                 base_lat: float = 39.9042, base_lon: float = 116.4074):
+        self.vehicle_id = vehicle_id
         self._wall_time = time.time()
         self._event_time = time.time()
-        self.speed = 0.0
-        self.rpm = 800.0
-        self.throttle = 0.0
+        self.speed = random.uniform(30, 80)
+        self.rpm = 800 + self.speed * 30
+        self.throttle = random.uniform(10, 40)
         self.brake = 0.0
         self.steering = 0.0
-        self.lat = 39.9042
-        self.lon = 116.4074
-        self.heading = 0.0
-        self._mode = "normal"
-        self._mode_timer = 0
+        self.lat = base_lat + random.uniform(-0.05, 0.05)
+        self.lon = base_lon + random.uniform(-0.05, 0.05)
+        self.heading = random.uniform(0, 360)
+        self._mode = random.choice(["normal", "normal", "normal", "aggressive", "fatigued", "economic"])
+        self._mode_timer = random.randint(50, 300)
         self._ooo_mean = out_of_order_mean
-        print(f"[生产者] 乱序延迟均值: {out_of_order_mean}s (指数分布)")
 
     def _switch_mode(self):
         self._mode_timer -= 1
@@ -58,7 +55,7 @@ class VehicleSimulator:
             modes = ["normal", "aggressive", "fatigued", "economic"]
             weights = [0.4, 0.2, 0.15, 0.25]
             self._mode = random.choices(modes, weights)[0]
-            self._mode_timer = random.randint(50, 200)
+            self._mode_timer = random.randint(50, 300)
 
     def _update_kinematics(self, dt):
         if self._mode == "aggressive":
@@ -112,6 +109,7 @@ class VehicleSimulator:
             event_ts -= delay
 
         return {
+            "vehicle_id": self.vehicle_id,
             "timestamp": event_ts * 1000,
             "speed": round(self.speed, 2),
             "rpm": round(self.rpm, 1),
@@ -131,7 +129,10 @@ def delivery_report(err, msg):
 
 
 def main():
-    sim = VehicleSimulator()
+    vehicles = [
+        VehicleSimulator(f"veh-{i+1:03d}", out_of_order_mean=OUT_OF_ORDER_MEAN)
+        for i in range(FLEET_SIZE)
+    ]
     producer = None
 
     if KAFKA_AVAILABLE:
@@ -141,28 +142,36 @@ def main():
         except Exception as e:
             print(f"[Kafka] 连接失败: {e}, 使用标准输出模式")
 
-    print("[生产者] 开始发送 CAN 总线数据... (Ctrl+C 停止)")
+    print(f"[生产者 v3] 车队规模: {FLEET_SIZE} 辆车")
+    print(f"[生产者 v3] 发送间隔: {SEND_INTERVAL}s, 乱序均值: {OUT_OF_ORDER_MEAN}s")
+    print(f"[生产者 v3] 预估吞吐量: {1/SEND_INTERVAL:.0f} msg/s, 每车 {(1/SEND_INTERVAL)/FLEET_SIZE:.1f} msg/s")
+    print(f"[生产者 v3] 开始发送数据... (Ctrl+C 停止)")
+
     count = 0
+    vehicle_idx = 0
     try:
         while True:
-            data = sim.tick()
+            veh = vehicles[vehicle_idx % FLEET_SIZE]
+            vehicle_idx += 1
+            data = veh.tick()
             payload = json.dumps(data, ensure_ascii=False)
 
             if producer is not None:
                 producer.produce(
                     TOPIC,
+                    key=data["vehicle_id"].encode("utf-8"),
                     value=payload.encode("utf-8"),
                     callback=delivery_report
                 )
                 producer.poll(0)
             else:
-                if count % 10 == 0:
-                    print(f"[{time.strftime('%H:%M:%S')}] {payload}")
+                if count % 500 == 0:
+                    print(f"[{time.strftime('%H:%M:%S')}] veh={data['vehicle_id']} speed={data['speed']}")
 
             count += 1
             time.sleep(SEND_INTERVAL)
     except KeyboardInterrupt:
-        print("\n[生产者] 已停止")
+        print(f"\n[生产者] 已停止，共发送 {count} 条消息")
         if producer is not None:
             producer.flush()
 
