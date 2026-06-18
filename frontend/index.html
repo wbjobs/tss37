@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>车联网驾驶员行为画像 - 实时仪表盘</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: #0f1923;
+            color: #e6edf3;
+            min-height: 100vh;
+            padding: 16px;
+        }
+        .header {
+            text-align: center;
+            padding: 12px 0 20px;
+            border-bottom: 1px solid #21303f;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #58a6ff, #3fb950);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header p {
+            color: #7d8590;
+            margin-top: 6px;
+            font-size: 13px;
+        }
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+        .dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #f85149;
+            animation: pulse 1.2s infinite;
+        }
+        .dot.connected { background: #3fb950; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+        .score-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #21303f;
+            border-radius: 10px;
+            padding: 18px;
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: "";
+            position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        }
+        .card.overall::before { background: linear-gradient(90deg, #58a6ff, #a371f7); }
+        .card.aggressive::before { background: linear-gradient(90deg, #f85149, #d29922); }
+        .card.fatigue::before { background: linear-gradient(90deg, #d29922, #db6d28); }
+        .card.economy::before { background: linear-gradient(90deg, #3fb950, #58a6ff); }
+
+        .card .label {
+            font-size: 13px;
+            color: #7d8590;
+            margin-bottom: 8px;
+        }
+        .card .score {
+            font-size: 38px;
+            font-weight: 700;
+            line-height: 1;
+        }
+        .card.overall .score { color: #58a6ff; }
+        .card.aggressive .score { color: #f85149; }
+        .card.fatigue .score { color: #d29922; }
+        .card.economy .score { color: #3fb950; }
+        .card .sub {
+            font-size: 12px;
+            color: #7d8590;
+            margin-top: 6px;
+        }
+
+        .summary-box {
+            background: #161b22;
+            border: 1px solid #21303f;
+            border-left: 4px solid #58a6ff;
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.7;
+            color: #c9d1d9;
+        }
+        .summary-box .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #1f6feb33;
+            color: #58a6ff;
+            border-radius: 4px;
+            margin-right: 8px;
+            font-size: 12px;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .chart-box {
+            background: #161b22;
+            border: 1px solid #21303f;
+            border-radius: 10px;
+            padding: 14px;
+            height: 320px;
+        }
+        .chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #c9d1d9;
+            margin-bottom: 10px;
+            padding-left: 8px;
+            border-left: 3px solid #58a6ff;
+        }
+        .chart-box .echarts { width: 100%; height: calc(100% - 30px); }
+
+        .map-section {
+            background: #161b22;
+            border: 1px solid #21303f;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .map-header {
+            padding: 12px 18px;
+            border-bottom: 1px solid #21303f;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .map-header .title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #c9d1d9;
+            padding-left: 8px;
+            border-left: 3px solid #3fb950;
+        }
+        .map-legend {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-size: 12px;
+            color: #7d8590;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
+            width: 14px; height: 10px; border-radius: 2px;
+        }
+        #map { height: 420px; background: #0d1117; }
+
+        .vehicle-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+        .info-card {
+            background: #161b22;
+            border: 1px solid #21303f;
+            border-radius: 10px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .info-icon {
+            width: 40px; height: 40px;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+        }
+        .info-card.speed .info-icon { background: #1f6feb33; }
+        .info-card.rpm .info-icon { background: #8957e533; }
+        .info-card.coord .info-icon { background: #3fb95033; }
+        .info-text .label { font-size: 12px; color: #7d8590; }
+        .info-text .value { font-size: 20px; font-weight: 600; color: #e6edf3; }
+
+        @media (max-width: 1024px) {
+            .score-cards, .charts-grid, .vehicle-info {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (max-width: 640px) {
+            .score-cards, .charts-grid, .vehicle-info {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚗 车联网驾驶员行为画像实时分析系统</h1>
+        <p>基于滑动窗口（5 分钟）实时计算激进指数 · 疲劳指数 · 经济性指数</p>
+        <div class="status-bar">
+            <span id="statusDot" class="dot"></span>
+            <span id="statusText">正在连接 WebSocket...</span>
+        </div>
+    </div>
+
+    <div class="score-cards">
+        <div class="card overall">
+            <div class="label">综合驾驶评分</div>
+            <div class="score" id="overallScore">--</div>
+            <div class="sub">满分 100 · 越高越安全经济</div>
+        </div>
+        <div class="card aggressive">
+            <div class="label">激进指数</div>
+            <div class="score" id="aggressiveScore">--</div>
+            <div class="sub">急加速 <span id="accelCount">0</span> · 急减速 <span id="decelCount">0</span> · 急转弯 <span id="steerCount">0</span></div>
+        </div>
+        <div class="card fatigue">
+            <div class="label">疲劳指数</div>
+            <div class="score" id="fatigueScore">--</div>
+            <div class="sub">方向稳定段 <span id="stableCount">0</span> · 曲率偏离 <span id="curvCount">0</span></div>
+        </div>
+        <div class="card economy">
+            <div class="label">经济性指数</div>
+            <div class="score" id="economyScore">--</div>
+            <div class="sub">平均油耗 <span id="avgFuel">--</span> L/100km · 滑行比 <span id="coastRatio">--</span></div>
+        </div>
+    </div>
+
+    <div class="summary-box">
+        <span class="tag">AI 摘要</span>
+        <span id="summaryText">等待数据接入...</span>
+    </div>
+
+    <div class="vehicle-info">
+        <div class="info-card speed">
+            <div class="info-icon">⚡</div>
+            <div class="info-text">
+                <div class="label">当前车速</div>
+                <div class="value"><span id="curSpeed">0</span> km/h</div>
+            </div>
+        </div>
+        <div class="info-card rpm">
+            <div class="info-icon">⚙️</div>
+            <div class="info-text">
+                <div class="label">发动机转速</div>
+                <div class="value"><span id="curRpm">0</span> RPM</div>
+            </div>
+        </div>
+        <div class="info-card coord">
+            <div class="info-icon">📍</div>
+            <div class="info-text">
+                <div class="label">GPS 坐标</div>
+                <div class="value" id="curCoord">--</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="charts-grid">
+        <div class="chart-box">
+            <div class="chart-title">三项指数实时趋势（最近 5 分钟）</div>
+            <div id="trendChart" class="echarts"></div>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">综合评分雷达（0-100）</div>
+            <div id="radarChart" class="echarts"></div>
+        </div>
+    </div>
+
+    <div class="map-section">
+        <div class="map-header">
+            <div class="title">实时行驶轨迹 · 颜色代表该点激进指数</div>
+            <div class="map-legend">
+                <div class="legend-item"><span class="legend-color" style="background:#3fb950"></span>温和</div>
+                <div class="legend-item"><span class="legend-color" style="background:#d29922"></span>一般</div>
+                <div class="legend-item"><span class="legend-color" style="background:#f85149"></span>激进</div>
+            </div>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script>
+    (function () {
+        const WS_URL = `ws://${location.hostname}:8765`;
+        const MAX_POINTS = 120;
+
+        let trendChart = echarts.init(document.getElementById("trendChart"), "dark");
+        let radarChart = echarts.init(document.getElementById("radarChart"), "dark");
+
+        let trendData = {
+            time: [],
+            aggressive: [],
+            fatigue: [],
+            economy: [],
+            overall: []
+        };
+        let currentAggressive = 50;
+
+        const map = L.map("map", { zoomControl: true }).setView([39.9042, 116.4074], 14);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "&copy; OpenStreetMap",
+            maxZoom: 19
+        }).addTo(map);
+
+        let trajectoryLayer = L.layerGroup().addTo(map);
+        let vehicleMarker = null;
+        let lastPoint = null;
+        let allTrajectory = [];
+
+        function getColorByAggressive(score) {
+            if (score < 35) return "#3fb950";
+            if (score < 65) return "#d29922";
+            return "#f85149";
+        }
+
+        function addTrajectoryPoint(pt, aggressive) {
+            allTrajectory.push({ ...pt, aggressive });
+            if (allTrajectory.length > 500) allTrajectory.shift();
+
+            if (lastPoint) {
+                const color = getColorByAggressive(aggressive);
+                L.polyline([
+                    [lastPoint.lat, lastPoint.lon],
+                    [pt.lat, pt.lon]
+                ], { color, weight: 4, opacity: 0.85 }).addTo(trajectoryLayer);
+            }
+            lastPoint = pt;
+
+            if (!vehicleMarker) {
+                vehicleMarker = L.circleMarker([pt.lat, pt.lon], {
+                    radius: 9,
+                    fillColor: "#58a6ff",
+                    color: "#fff",
+                    weight: 2,
+                    fillOpacity: 1
+                }).addTo(map);
+            } else {
+                vehicleMarker.setLatLng([pt.lat, pt.lon]);
+            }
+            map.panTo([pt.lat, pt.lon]);
+        }
+
+        function updateTrendChart() {
+            trendChart.setOption({
+                backgroundColor: "transparent",
+                tooltip: { trigger: "axis" },
+                legend: {
+                    data: ["激进指数", "疲劳指数", "经济性指数", "综合评分"],
+                    textStyle: { color: "#8b949e" },
+                    top: 0
+                },
+                grid: { left: 45, right: 20, top: 40, bottom: 30 },
+                xAxis: {
+                    type: "category",
+                    boundaryGap: false,
+                    data: trendData.time,
+                    axisLine: { lineStyle: { color: "#30363d" } },
+                    axisLabel: { color: "#8b949e", fontSize: 10 }
+                },
+                yAxis: {
+                    type: "value", min: 0, max: 100,
+                    axisLine: { lineStyle: { color: "#30363d" } },
+                    splitLine: { lineStyle: { color: "#21262d" } },
+                    axisLabel: { color: "#8b949e" }
+                },
+                series: [
+                    {
+                        name: "激进指数", type: "line", smooth: true,
+                        data: trendData.aggressive,
+                        itemStyle: { color: "#f85149" },
+                        lineStyle: { width: 2 },
+                        areaStyle: { color: "rgba(248,81,73,0.08)" }
+                    },
+                    {
+                        name: "疲劳指数", type: "line", smooth: true,
+                        data: trendData.fatigue,
+                        itemStyle: { color: "#d29922" },
+                        lineStyle: { width: 2 },
+                        areaStyle: { color: "rgba(210,153,34,0.08)" }
+                    },
+                    {
+                        name: "经济性指数", type: "line", smooth: true,
+                        data: trendData.economy,
+                        itemStyle: { color: "#3fb950" },
+                        lineStyle: { width: 2 },
+                        areaStyle: { color: "rgba(63,185,80,0.08)" }
+                    },
+                    {
+                        name: "综合评分", type: "line", smooth: true,
+                        data: trendData.overall,
+                        itemStyle: { color: "#58a6ff" },
+                        lineStyle: { width: 3, type: "dashed" }
+                    }
+                ]
+            });
+        }
+
+        function updateRadarChart(data) {
+            radarChart.setOption({
+                backgroundColor: "transparent",
+                tooltip: {},
+                radar: {
+                    indicator: [
+                        { name: "安全性(反激进)", max: 100 },
+                        { name: "清醒度(反疲劳)", max: 100 },
+                        { name: "经济性", max: 100 },
+                        { name: "综合", max: 100 }
+                    ],
+                    axisName: { color: "#8b949e" },
+                    splitLine: { lineStyle: { color: "#21262d" } },
+                    splitArea: { areaStyle: { color: ["rgba(33,48,63,0.3)", "rgba(33,48,63,0.1)"] } },
+                    axisLine: { lineStyle: { color: "#30363d" } }
+                },
+                series: [{
+                    type: "radar",
+                    data: [{
+                        value: [
+                            100 - data.aggressive_index,
+                            100 - data.fatigue_index,
+                            data.economy_index,
+                            data.overall_score
+                        ],
+                        name: "当前评分",
+                        areaStyle: { color: "rgba(88,166,255,0.25)" },
+                        lineStyle: { color: "#58a6ff", width: 2 },
+                        itemStyle: { color: "#58a6ff" }
+                    }]
+                }]
+            });
+        }
+
+        function updateDashboard(payload) {
+            const d = payload.data;
+            currentAggressive = d.aggressive_index;
+
+            document.getElementById("overallScore").textContent = d.overall_score;
+            document.getElementById("aggressiveScore").textContent = d.aggressive_index;
+            document.getElementById("fatigueScore").textContent = d.fatigue_index;
+            document.getElementById("economyScore").textContent = d.economy_index;
+
+            document.getElementById("accelCount").textContent = d.details.aggressive.accel_count;
+            document.getElementById("decelCount").textContent = d.details.aggressive.decel_count;
+            document.getElementById("steerCount").textContent = d.details.aggressive.steer_count;
+            document.getElementById("stableCount").textContent = d.details.fatigue.stable_segments;
+            document.getElementById("curvCount").textContent = d.details.fatigue.curvature_events;
+            document.getElementById("avgFuel").textContent = d.details.economy.avg_fuel;
+            document.getElementById("coastRatio").textContent = (d.details.economy.coast_ratio * 100).toFixed(1) + "%";
+
+            document.getElementById("summaryText").textContent = d.summary;
+
+            const v = d.latest_vehicle;
+            document.getElementById("curSpeed").textContent = v.speed;
+            document.getElementById("curRpm").textContent = Math.round(v.rpm);
+            document.getElementById("curCoord").textContent = `${v.gps.lat.toFixed(5)}, ${v.gps.lon.toFixed(5)}`;
+
+            const t = new Date(d.timestamp);
+            const timeLabel = `${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}:${t.getSeconds().toString().padStart(2,"0")}`;
+            trendData.time.push(timeLabel);
+            trendData.aggressive.push(d.aggressive_index);
+            trendData.fatigue.push(d.fatigue_index);
+            trendData.economy.push(d.economy_index);
+            trendData.overall.push(d.overall_score);
+            while (trendData.time.length > MAX_POINTS) {
+                trendData.time.shift();
+                trendData.aggressive.shift();
+                trendData.fatigue.shift();
+                trendData.economy.shift();
+                trendData.overall.shift();
+            }
+
+            updateTrendChart();
+            updateRadarChart(d);
+
+            if (payload.trajectory && payload.trajectory.length) {
+                const pts = payload.trajectory;
+                const aggressiveStep = d.aggressive_index;
+                pts.forEach((pt, idx) => {
+                    const w = idx / pts.length;
+                    const agg = Math.max(0, Math.min(100, aggressiveStep * w + currentAggressive * (1 - w)));
+                    addTrajectoryPoint(pt, agg);
+                });
+            }
+        }
+
+        function setConnected(ok) {
+            const dot = document.getElementById("statusDot");
+            const txt = document.getElementById("statusText");
+            if (ok) {
+                dot.className = "dot connected";
+                txt.textContent = "实时数据连接正常";
+                txt.style.color = "#3fb950";
+            } else {
+                dot.className = "dot";
+                txt.textContent = "连接断开，尝试重连...";
+                txt.style.color = "#f85149";
+            }
+        }
+
+        function connectWS() {
+            let ws;
+            try {
+                ws = new WebSocket(WS_URL);
+            } catch (e) {
+                setConnected(false);
+                setTimeout(connectWS, 3000);
+                return;
+            }
+            ws.onopen = () => setConnected(true);
+            ws.onclose = () => { setConnected(false); setTimeout(connectWS, 3000); };
+            ws.onerror = () => { setConnected(false); };
+            ws.onmessage = (ev) => {
+                try {
+                    const payload = JSON.parse(ev.data);
+                    if (payload.type === "metrics") {
+                        updateDashboard(payload);
+                    }
+                } catch (err) {
+                    console.error("消息解析失败", err);
+                }
+            };
+        }
+
+        updateTrendChart();
+        updateRadarChart({
+            aggressive_index: 30, fatigue_index: 20,
+            economy_index: 60, overall_score: 50
+        });
+        connectWS();
+        window.addEventListener("resize", () => {
+            trendChart.resize();
+            radarChart.resize();
+        });
+    })();
+    </script>
+</body>
+</html>
