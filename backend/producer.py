@@ -1,6 +1,10 @@
 """
-Kafka 数据生产者 - 模拟车辆 CAN 总线数据
-周期性发送包含车速、转速、踏板、方向盘、GPS 等信号的 JSON 消息
+Kafka 数据生产者 v2 - 模拟车辆 CAN 总线数据 + 乱序模拟
+
+v2 新增：
+  - OUT_OF_ORDER_MEAN 环境变量控制乱序程度
+  - 事件时间戳带随机延迟偏移（指数分布），模拟 Kafka 高峰期乱序
+  - 即使消息到达顺序与事件顺序不一致，消费者端水印机制也能正确处理
 """
 import json
 import time
@@ -20,13 +24,21 @@ except ImportError:
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC = os.getenv("KAFKA_TOPIC", "vehicle_can")
 SEND_INTERVAL = float(os.getenv("SEND_INTERVAL", "0.1"))
+OUT_OF_ORDER_MEAN = float(os.getenv("OUT_OF_ORDER_MEAN", "2.0"))
 
 
 class VehicleSimulator:
-    """车辆运动模拟器 - 生成真实的驾驶行为数据"""
+    """
+    车辆运动模拟器 v2 - 带乱序时间戳
 
-    def __init__(self):
-        self.timestamp = time.time()
+    生成真实事件时间，但给时间戳减去一个随机延迟偏移，
+    模拟消息在 Kafka 传输中的乱序到达。
+    延迟偏移量服从指数分布，均值 = OUT_OF_ORDER_MEAN 秒。
+    """
+
+    def __init__(self, out_of_order_mean: float = OUT_OF_ORDER_MEAN):
+        self._wall_time = time.time()
+        self._event_time = time.time()
         self.speed = 0.0
         self.rpm = 800.0
         self.throttle = 0.0
@@ -37,9 +49,10 @@ class VehicleSimulator:
         self.heading = 0.0
         self._mode = "normal"
         self._mode_timer = 0
+        self._ooo_mean = out_of_order_mean
+        print(f"[生产者] 乱序延迟均值: {out_of_order_mean}s (指数分布)")
 
     def _switch_mode(self):
-        """随机切换驾驶模式，模拟不同驾驶风格"""
         self._mode_timer -= 1
         if self._mode_timer <= 0:
             modes = ["normal", "aggressive", "fatigued", "economic"]
@@ -48,7 +61,6 @@ class VehicleSimulator:
             self._mode_timer = random.randint(50, 200)
 
     def _update_kinematics(self, dt):
-        """根据驾驶模式更新车辆运动学参数"""
         if self._mode == "aggressive":
             throttle_jitter = random.uniform(-0.15, 0.4)
             brake_jitter = random.uniform(-0.05, 0.3)
@@ -80,21 +92,27 @@ class VehicleSimulator:
         self.steering *= 0.95
 
         if self.speed > 0:
-            gps_dt = dt
-            distance = self.speed / 3.6 * gps_dt / 111000
-            self.heading += self.steering * 0.0005 * gps_dt
+            distance = self.speed / 3.6 * dt / 111000
+            self.heading += self.steering * 0.0005 * dt
             self.lat += distance * math.cos(math.radians(self.heading))
             self.lon += distance * math.sin(math.radians(self.heading)) / math.cos(math.radians(self.lat))
 
     def tick(self):
-        """生成一帧数据"""
         now = time.time()
-        dt = now - self.timestamp
-        self.timestamp = now
+        dt = now - self._wall_time
+        self._wall_time = now
+        self._event_time += dt
+
         self._switch_mode()
         self._update_kinematics(dt)
+
+        event_ts = self._event_time
+        if self._ooo_mean > 0:
+            delay = random.expovariate(1.0 / self._ooo_mean)
+            event_ts -= delay
+
         return {
-            "timestamp": now * 1000,
+            "timestamp": event_ts * 1000,
             "speed": round(self.speed, 2),
             "rpm": round(self.rpm, 1),
             "throttle": round(self.throttle, 2),

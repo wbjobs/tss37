@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>车联网驾驶员行为画像 - 实时仪表盘</title>
+    <title>车联网驾驶员行为画像 v2 - 事件时间水印机制</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -201,6 +201,26 @@
         .info-text .label { font-size: 12px; color: #7d8590; }
         .info-text .value { font-size: 20px; font-weight: 600; color: #e6edf3; }
 
+        .watermark-bar {
+            background: #161b22;
+            border: 1px solid #21303f;
+            border-left: 4px solid #a371f7;
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+        }
+        .wm-item { text-align: center; }
+        .wm-item .wm-label { font-size: 11px; color: #7d8590; margin-bottom: 4px; }
+        .wm-item .wm-value { font-size: 16px; font-weight: 600; }
+        .wm-item .wm-value.purple { color: #a371f7; }
+        .wm-item .wm-value.cyan { color: #39d2c0; }
+        .wm-item .wm-value.yellow { color: #d29922; }
+        .wm-item .wm-value.red { color: #f85149; }
+        .wm-item .wm-value.green { color: #3fb950; }
+
         @media (max-width: 1024px) {
             .score-cards, .charts-grid, .vehicle-info {
                 grid-template-columns: repeat(2, 1fr);
@@ -272,6 +292,29 @@
                 <div class="label">GPS 坐标</div>
                 <div class="value" id="curCoord">--</div>
             </div>
+        </div>
+    </div>
+
+    <div class="watermark-bar">
+        <div class="wm-item">
+            <div class="wm-label">事件时间水印</div>
+            <div class="wm-value purple" id="wmWatermark">--</div>
+        </div>
+        <div class="wm-item">
+            <div class="wm-label">最大事件时间</div>
+            <div class="wm-value cyan" id="wmMaxEvent">--</div>
+        </div>
+        <div class="wm-item">
+            <div class="wm-label">宽容度 (Allowed Lateness)</div>
+            <div class="wm-value yellow" id="wmLateness">--</div>
+        </div>
+        <div class="wm-item">
+            <div class="wm-label">迟到数据已接纳</div>
+            <div class="wm-value red" id="wmLateCount">0</div>
+        </div>
+        <div class="wm-item">
+            <div class="wm-label">丢弃数据</div>
+            <div class="wm-value green" id="wmDropCount">0</div>
         </div>
     </div>
 
@@ -471,6 +514,20 @@
             document.getElementById("curSpeed").textContent = v.speed;
             document.getElementById("curRpm").textContent = Math.round(v.rpm);
             document.getElementById("curCoord").textContent = `${v.gps.lat.toFixed(5)}, ${v.gps.lon.toFixed(5)}`;
+
+            if (d.watermark_stats) {
+                const ws = d.watermark_stats;
+                const fmtTs = (ts) => {
+                    if (!ts || ts < 1e6) return "--";
+                    const d = new Date(ts * 1000);
+                    return d.toLocaleTimeString("zh-CN", {hour12: false});
+                };
+                document.getElementById("wmWatermark").textContent = fmtTs(ws.watermark);
+                document.getElementById("wmMaxEvent").textContent = fmtTs(ws.max_event_time);
+                document.getElementById("wmLateness").textContent = ws.allowed_lateness + "s";
+                document.getElementById("wmLateCount").textContent = ws.late_accepted_count;
+                document.getElementById("wmDropCount").textContent = ws.dropped_count;
+            }
 
             const t = new Date(d.timestamp);
             const timeLabel = `${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}:${t.getSeconds().toString().padStart(2,"0")}`;

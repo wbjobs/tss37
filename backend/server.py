@@ -1,5 +1,11 @@
 """
-主服务端 - 集成 Kafka 消费者、行为分析引擎、WebSocket 服务端
+主服务端 v2 - 集成 Kafka 消费者、事件时间水印分析引擎、WebSocket 服务端
+
+核心改进（对应 v2 水印机制）：
+  1. add_record() 现在返回记录分类（on_time/late/drop），用于监控水印效果
+  2. should_output() 基于事件时间水印推进触发，而非处理时间
+  3. 模拟器生成带随机延迟的乱序数据，以验证水印机制的鲁棒性
+
 支持两种数据输入模式：
   1. Kafka 模式 - 从 Kafka 消费 CAN 总线数据
   2. 回退模式 - 直接调用内部模拟器生成数据（无需 Kafka 环境）
@@ -40,18 +46,27 @@ HTTP_PORT = int(os.getenv("HTTP_PORT", "8080"))
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 
-analyzer = BehaviorAnalyzer()
+ALLOWED_LATENESS = float(os.getenv("ALLOWED_LATENESS", "5.0"))
+
+analyzer = BehaviorAnalyzer(allowed_lateness=ALLOWED_LATENESS)
 connected_clients: set = set()
 latest_result: dict = None
 trajectory_buffer: list = []
 TRAJECTORY_MAX_POINTS = 500
+watermark_log_interval = 0
+watermark_log_counter = 0
 
 
 class ProducerSimulator:
-    """内置数据模拟器 - 当 Kafka 不可用时使用"""
+    """
+    内置数据模拟器 v2 - 带乱序模拟
 
-    def __init__(self):
-        self.timestamp = time.time()
+    生成数据时给事件时间戳添加随机"网络延迟偏移"，
+    模拟 Kafka 高峰期消息乱序到达的场景。
+    延迟偏移量服从指数分布，均值由 OUT_OF_ORDER_MEAN 控制。
+    """
+
+    def __init__(self, out_of_order_mean: float = 2.0):
         self.speed = 0.0
         self.rpm = 800.0
         self.throttle = 0.0
@@ -62,6 +77,9 @@ class ProducerSimulator:
         self.heading = 0.0
         self._mode = "normal"
         self._mode_timer = 0
+        self._event_time = time.time()
+        self._out_of_order_mean = out_of_order_mean
+        print(f"[模拟器] 乱序延迟均值: {out_of_order_mean}s")
 
     def _switch_mode(self):
         self._mode_timer -= 1
@@ -112,9 +130,14 @@ class ProducerSimulator:
             self.lon += distance * math.sin(math.radians(self.heading)) / math.cos(math.radians(self.lat))
 
         now = time.time()
-        self.timestamp = now
+        self._event_time += dt
+        event_ts = self._event_time
+
+        delay_offset = random.expovariate(1.0 / self._out_of_order_mean) if self._out_of_order_mean > 0 else 0
+        event_ts -= delay_offset
+
         return {
-            "timestamp": now * 1000,
+            "timestamp": event_ts * 1000,
             "speed": round(self.speed, 2),
             "rpm": round(self.rpm, 1),
             "throttle": round(self.throttle, 2),
@@ -172,16 +195,24 @@ def simulator_fallback_thread():
 
 
 def process_record(record: dict):
-    """处理单条 CAN 数据记录"""
-    global latest_result
-    analyzer.add_record(record)
+    """处理单条 CAN 数据记录（v2: 含水印分类反馈）"""
+    global latest_result, watermark_log_counter
+
+    result = analyzer.add_record(record)
+
+    if result["status"] == "drop":
+        if watermark_log_counter % 100 == 0:
+            print(f"[Watermark] 丢弃迟到数据: event_time={result['event_time']}, watermark={result['watermark']}")
+        watermark_log_counter += 1
+        return
 
     gps = record.get("gps", {})
     if gps:
         trajectory_buffer.append({
             "timestamp": record["timestamp"],
             "lat": gps["lat"],
-            "lon": gps["lon"]
+            "lon": gps["lon"],
+            "aggressive": 50
         })
         while len(trajectory_buffer) > TRAJECTORY_MAX_POINTS:
             trajectory_buffer.pop(0)
@@ -261,14 +292,16 @@ if __name__ == "__main__":
     kafka_thread.start()
 
     print("=" * 60)
-    print("  车联网驾驶员行为画像实时分析系统")
+    print("  车联网驾驶员行为画像实时分析系统 v2")
+    print("  [事件时间语义 + Watermark 水印机制]")
     print("=" * 60)
     print(f"  前端仪表盘: http://localhost:{HTTP_PORT}")
     print(f"  WebSocket : ws://localhost:{WS_PORT}")
+    print(f"  水印宽容度: {ALLOWED_LATENESS}s (迟到数据容忍上限)")
     if KAFKA_AVAILABLE:
         print(f"  Kafka     : {BOOTSTRAP_SERVERS} (主题: {TOPIC})")
     else:
-        print(f"  Kafka     : 未连接，使用内置数据模拟器")
+        print(f"  Kafka     : 未连接，使用内置数据模拟器(含乱序)")
     print("=" * 60)
 
     try:
